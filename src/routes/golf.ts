@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
-import type { GolfCoursesResponse, ErrorResponse } from '../types';
-import { searchGolfCourses, RakutenApiError } from '../rakuten';
+import type { GolfCoursesResponse, GolfCourseDetailResponse, ErrorResponse } from '../types';
+import { searchGolfCourses, getGolfCourseDetail, RakutenApiError } from '../rakuten';
 import { env } from '../env';
 
 export const golfRoutes = new Hono();
@@ -10,7 +10,7 @@ export const golfRoutes = new Hono();
 // ---------------------------------------------------------------------------
 
 interface CacheEntry {
-  data: GolfCoursesResponse;
+  data: unknown;
   expiresAt: number;
 }
 
@@ -37,7 +37,7 @@ golfRoutes.get('/courses', async (c) => {
   const cacheKey = `${encodeURIComponent(keyword)}:${limit}`;
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    return c.json(cached.data, 200, { 'X-Cache': 'HIT' });
+    return c.json(cached.data as GolfCoursesResponse, 200, { 'X-Cache': 'HIT' });
   }
 
   // 楽天GORA 検索
@@ -45,11 +45,14 @@ golfRoutes.get('/courses', async (c) => {
     const courses = await searchGolfCourses(keyword, limit, env);
     const body: GolfCoursesResponse = { courses };
 
-    cache.set(cacheKey, { data: body, expiresAt: Date.now() + CACHE_TTL_MS });
+    cache.set(cacheKey, { data: body as unknown, expiresAt: Date.now() + CACHE_TTL_MS });
 
     return c.json(body, 200, { 'X-Cache': 'MISS' });
   } catch (err) {
     if (err instanceof RakutenApiError) {
+      if (err.code === 'not_found') {
+        return c.json<GolfCoursesResponse>({ courses: [] }, 200);
+      }
       console.error('[golf/courses] upstream error:', err.code, err.message);
       return c.json<ErrorResponse>(
         {
@@ -61,6 +64,56 @@ golfRoutes.get('/courses', async (c) => {
     }
 
     console.error('[golf/courses] unexpected error:', err);
+    return c.json<ErrorResponse>(
+      { error: 'internal_error', message: 'An unexpected error occurred.' },
+      500,
+    );
+  }
+});
+
+// ---------------------------------------------------------------------------
+// GET /golf/courses/:id
+// ---------------------------------------------------------------------------
+
+golfRoutes.get('/courses/:id', async (c) => {
+  const idRaw = parseInt(c.req.param('id'), 10);
+  if (isNaN(idRaw) || idRaw <= 0) {
+    return c.json<ErrorResponse>(
+      { error: 'invalid_id', message: 'id must be a positive integer' },
+      400,
+    );
+  }
+
+  // キャッシュ確認
+  const cacheKey = `detail:${idRaw}`;
+  const cached = cache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) {
+    return c.json(cached.data as GolfCourseDetailResponse, 200, { 'X-Cache': 'HIT' });
+  }
+
+  try {
+    const course = await getGolfCourseDetail(idRaw, env);
+    const body: GolfCourseDetailResponse = { course };
+
+    cache.set(cacheKey, { data: body as unknown, expiresAt: Date.now() + CACHE_TTL_MS });
+
+    return c.json(body, 200, { 'X-Cache': 'MISS' });
+  } catch (err) {
+    if (err instanceof RakutenApiError) {
+      if (err.code === 'not_found') {
+        return c.json<ErrorResponse>({ error: 'not_found', message: 'Course not found' }, 404);
+      }
+      console.error('[golf/courses/:id] upstream error:', err.code, err.message);
+      return c.json<ErrorResponse>(
+        {
+          error: 'upstream_error',
+          message: 'Course detail is temporarily unavailable. Please try again later.',
+        },
+        502,
+      );
+    }
+
+    console.error('[golf/courses/:id] unexpected error:', err);
     return c.json<ErrorResponse>(
       { error: 'internal_error', message: 'An unexpected error occurred.' },
       500,

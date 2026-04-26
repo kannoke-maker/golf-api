@@ -1,13 +1,16 @@
 import * as https from 'node:https';
 import type { IncomingMessage } from 'node:http';
-import type { Env, GolfCourse } from './types';
+import type { Env, GolfCourse, GolfCourseDetail } from './types';
 
 // ---------------------------------------------------------------------------
 // 楽天GORA エンドポイント
 // ---------------------------------------------------------------------------
 
-const RAKUTEN_ENDPOINT =
+const RAKUTEN_SEARCH_ENDPOINT =
   'https://openapi.rakuten.co.jp/engine/api/Gora/GoraGolfCourseSearch/20170623';
+
+const RAKUTEN_DETAIL_ENDPOINT =
+  'https://openapi.rakuten.co.jp/engine/api/Gora/GoraGolfCourseDetail/20170623';
 
 const DEFAULT_REFERRER = 'https://golf-api.example.onrender.com';
 
@@ -51,6 +54,15 @@ interface RakutenErrorResponse {
 // https.get() ラッパー（fetch() は Referer を forbidden header として除去するため使わない）
 // ---------------------------------------------------------------------------
 
+/** 非2xx レスポンス body から楽天エラーコードを取り出す。取れなければ 'http_error' を返す。 */
+function extractRakutenErrorCode(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as { error?: string };
+    if (typeof parsed.error === 'string' && parsed.error) return parsed.error;
+  } catch { /* ignore */ }
+  return 'http_error';
+}
+
 function httpsGet(urlStr: string, headers: Record<string, string>): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
     const req = https.get(urlStr, { headers }, (res: IncomingMessage) => {
@@ -86,7 +98,7 @@ export async function searchGolfCourses(
     formatVersion: '2',
   });
 
-  const url = `${RAKUTEN_ENDPOINT}?${params.toString()}`;
+  const url = `${RAKUTEN_SEARCH_ENDPOINT}?${params.toString()}`;
   const referrer = env.RAKUTEN_REFERRER_URL ?? DEFAULT_REFERRER;
   const headers = {
     Referer:      referrer,
@@ -103,13 +115,9 @@ export async function searchGolfCourses(
   }
 
   if (status < 200 || status >= 300) {
-    console.error('[rakuten] HTTP', status,
-      '| Referer:', headers.Referer,
-      '| Origin:', headers.Origin,
-      '| UA:', headers['User-Agent'],
-      '| body:', body,
-    );
-    throw new RakutenApiError('http_error', `Rakuten returned HTTP ${status}`);
+    const errorCode = extractRakutenErrorCode(body);
+    console.error('[rakuten] HTTP', status, '| code:', errorCode, '| body:', body);
+    throw new RakutenApiError(errorCode, `Rakuten returned HTTP ${status}`);
   }
 
   const json = JSON.parse(body) as RakutenSearchResponse | RakutenErrorResponse;
@@ -128,4 +136,91 @@ export async function searchGolfCourses(
     holeCount:   item.holeCount ?? 18,
     courseCount: item.courseCount ?? 1,
   }));
+}
+
+// ---------------------------------------------------------------------------
+// 詳細API レスポンス型（内部使用のみ）
+// ---------------------------------------------------------------------------
+
+interface RakutenDetailResponse {
+  Item: RakutenDetailItem;
+}
+
+interface RakutenDetailItem {
+  golfCourseId:      number;
+  golfCourseName:    string;
+  address?:          string;
+  holeCount?:        number;
+  courseCount?:      number;
+  golfCourseCaption?: string;
+  latitude?:         number | string;
+  longitude?:        number | string;
+  evaluation?:       number | string;
+  nearestStation?:   string;
+  telephoneNo?:      string;
+}
+
+// ---------------------------------------------------------------------------
+// 詳細取得
+// ---------------------------------------------------------------------------
+
+/**
+ * 楽天GORA でコース詳細を取得し、iOS 向け GolfCourseDetail に整形して返す。
+ */
+export async function getGolfCourseDetail(
+  golfCourseId: number,
+  env: Env,
+): Promise<GolfCourseDetail> {
+  const params = new URLSearchParams({
+    applicationId: env.RAKUTEN_APPLICATION_ID,
+    accessKey:     env.RAKUTEN_ACCESS_KEY,
+    golfCourseId:  String(golfCourseId),
+    format:        'json',
+    formatVersion: '2',
+  });
+
+  const url = `${RAKUTEN_DETAIL_ENDPOINT}?${params.toString()}`;
+  const referrer = env.RAKUTEN_REFERRER_URL ?? DEFAULT_REFERRER;
+  const headers = {
+    Referer:      referrer,
+    Origin:       referrer.replace(/\/$/, ''),
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  };
+
+  let status: number;
+  let body: string;
+  try {
+    ({ status, body } = await httpsGet(url, headers));
+  } catch (err) {
+    throw new RakutenApiError('network_error', `request failed: ${String(err)}`);
+  }
+
+  if (status < 200 || status >= 300) {
+    const errorCode = extractRakutenErrorCode(body);
+    console.error('[rakuten/detail] HTTP', status, '| code:', errorCode, '| body:', body);
+    throw new RakutenApiError(errorCode, `Rakuten returned HTTP ${status}`);
+  }
+
+  const json = JSON.parse(body) as RakutenDetailResponse | RakutenErrorResponse;
+
+  if ('error' in json && typeof json.error === 'string' && json.error !== '') {
+    const errJson = json as RakutenErrorResponse;
+    console.error('[rakuten/detail] API error:', errJson.error, errJson.error_description ?? '');
+    throw new RakutenApiError(errJson.error, errJson.error_description ?? errJson.error);
+  }
+
+  const item = (json as RakutenDetailResponse).Item;
+  return {
+    id:             item.golfCourseId,
+    name:           item.golfCourseName,
+    address:        item.address        ?? '',
+    holeCount:      item.holeCount      ?? 18,
+    courseCount:    item.courseCount    ?? 1,
+    caption:        item.golfCourseCaption ?? '',
+    latitude:       Number(item.latitude  ?? 0),
+    longitude:      Number(item.longitude ?? 0),
+    evaluation:     Number(item.evaluation ?? 0),
+    nearestStation: item.nearestStation ?? '',
+    telephoneNo:    item.telephoneNo    ?? '',
+  };
 }
