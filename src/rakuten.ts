@@ -1,4 +1,5 @@
-import https from 'node:https';
+import * as https from 'node:https';
+import type { IncomingMessage } from 'node:http';
 import type { Env, GolfCourse } from './types';
 
 // ---------------------------------------------------------------------------
@@ -52,7 +53,7 @@ interface RakutenErrorResponse {
 
 function httpsGet(urlStr: string, headers: Record<string, string>): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = https.get(urlStr, { headers }, (res) => {
+    const req = https.get(urlStr, { headers }, (res: IncomingMessage) => {
       const chunks: Buffer[] = [];
       res.on('data', (chunk: Buffer) => chunks.push(chunk));
       res.on('end', () =>
