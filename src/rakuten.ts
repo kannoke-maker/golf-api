@@ -88,17 +88,27 @@ export async function searchGolfCourses(
 
   const url = `${RAKUTEN_ENDPOINT}?${params.toString()}`;
   const referrer = env.RAKUTEN_REFERRER_URL ?? DEFAULT_REFERRER;
+  const headers = {
+    Referer:      referrer,
+    Origin:       referrer.replace(/\/$/, ''),
+    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  };
 
   let status: number;
   let body: string;
   try {
-    ({ status, body } = await httpsGet(url, { Referer: referrer }));
+    ({ status, body } = await httpsGet(url, headers));
   } catch (err) {
     throw new RakutenApiError('network_error', `request failed: ${String(err)}`);
   }
 
   if (status < 200 || status >= 300) {
-    console.error('[rakuten] HTTP', status, '| referrer:', referrer, '| body:', body);
+    console.error('[rakuten] HTTP', status,
+      '| Referer:', headers.Referer,
+      '| Origin:', headers.Origin,
+      '| UA:', headers['User-Agent'],
+      '| body:', body,
+    );
     throw new RakutenApiError('http_error', `Rakuten returned HTTP ${status}`);
   }
 
