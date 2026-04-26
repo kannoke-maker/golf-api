@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: golf-api
+    env: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    envVars:
+      - key: RAKUTEN_APPLICATION_ID
+        sync: false
+      - key: RAKUTEN_ACCESS_KEY
+        sync: false
+      - key: RAKUTEN_REFERRER_URL
+        sync: false

@@ -1,0 +1,17 @@
+name            = "golf-api"
+main            = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# Secrets は wrangler.toml に書かない。
+# 以下のコマンドで登録する:
+#   wrangler secret put RAKUTEN_APPLICATION_ID
+#   wrangler secret put RAKUTEN_ACCESS_KEY
+#
+# ローカル開発時は .dev.vars ファイルを使用する（.dev.vars.example を参照）。
+
+[observability]
+enabled = true   # Workers Logpush / tail logs を有効化
+
+# 将来エンドポイントを増やす場合のメモ:
+#   /golf/courses        コース検索（実装済み）
+#   /golf/course-detail  コース詳細（未実装）

@@ -1,0 +1,13 @@
+# ローカル開発用シークレット
+# このファイルを .dev.vars としてコピーして実際の値を入力する。
+# .dev.vars は .gitignore に追加してリポジトリに含めない。
+#
+# 楽天ウェブサービス登録: https://webservice.rakuten.co.jp/
+#
+# RAKUTEN_APPLICATION_ID : アプリID（認証必須）
+# RAKUTEN_ACCESS_KEY     : アクセスキー（認証必須。affiliateId とは別物）
+
+RAKUTEN_APPLICATION_ID=your_application_id_here
+RAKUTEN_ACCESS_KEY=your_access_key_here
+# 楽天アプリ登録の「APIリクエストを許可するWebサイト」に登録したURLと一致させること
+RAKUTEN_REFERRER_URL=https://golf-api.your-subdomain.workers.dev
