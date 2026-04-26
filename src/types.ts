@@ -32,6 +32,25 @@ export interface GolfCoursesResponse {
   courses: GolfCourse[];
 }
 
+/** コース詳細 — GolfCourseDetail (iOS) と 1:1 対応 */
+export interface GolfCourseDetail {
+  id: number;
+  name: string;
+  address: string;
+  holeCount: number;
+  courseCount: number;
+  caption: string;
+  latitude: number;
+  longitude: number;
+  evaluation: number;
+  nearestStation: string;
+  telephoneNo: string;
+}
+
+export interface GolfCourseDetailResponse {
+  course: GolfCourseDetail;
+}
+
 /** 統一エラーレスポンス */
 export interface ErrorResponse {
   error: string;
